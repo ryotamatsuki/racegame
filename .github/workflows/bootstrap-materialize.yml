@@ -1,0 +1,66 @@
+name: Materialize and verify implementation
+on:
+  push:
+    branches: [implementation/browser-racer-v1]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  materialize-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: implementation/browser-racer-v1
+          fetch-depth: 0
+      - name: Reconstruct implementation archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat bootstrap/payload-current.part.* | base64 -d > /tmp/racegame-current.tgz
+          echo "cce9d1ddd97f74f125191981c5b65c66d52df1ce9717684fda6afce4b289917c  /tmp/racegame-current.tgz" | sha256sum -c -
+          tar xzf /tmp/racegame-current.tgz -C .
+          rm -f bootstrap/payload-current.part.* bootstrap/source.part.*
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - name: Generate deterministic lockfile
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+      - name: Clean install
+        run: npm ci --no-audit --no-fund
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Unit and simulation tests
+        run: npm test
+      - name: Production build
+        run: npm run build
+      - name: Install Chromium for E2E
+        run: npx playwright install --with-deps chromium
+      - name: Browser E2E
+        run: npm run test:e2e
+      - name: Preserve E2E evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bootstrap-e2e-evidence-${{ github.run_id }}
+          path: |
+            test-results/
+            playwright-report/
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Promote verified workflows
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/bootstrap-materialize.yml .github/workflows/bootstrap-lock.yml
+          mkdir -p .github/workflows
+          mv bootstrap/ci.yml .github/workflows/ci.yml
+          mv bootstrap/pages.yml .github/workflows/pages.yml
+          rmdir bootstrap
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'feat: implement 3D browser racing game'
+          git push origin HEAD:implementation/browser-racer-v1
