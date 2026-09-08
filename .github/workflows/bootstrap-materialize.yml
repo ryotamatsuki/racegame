@@ -26,6 +26,8 @@ jobs:
         with:
           node-version: '22'
           package-manager-cache: false
+      - name: Keep unit and browser suites separate
+        run: npm pkg set 'scripts.test=vitest run tests/simulation.test.ts tests/storage.test.ts'
       - name: Generate deterministic lockfile
         run: npx --yes npm@11 install --package-lock-only --ignore-scripts --no-audit --no-fund
       - name: Clean install
