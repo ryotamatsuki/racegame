@@ -2,7 +2,7 @@
 
 ミニ四駆風のオリジナル模型マシンを選び、9カテゴリのパーツを組み替え、CPU 3台との3周レースまたはタイムアタックでセッティングを比較する3Dブラウザゲームです。
 
-公開予定URL: https://ryotamatsuki.github.io/racegame/
+公開URL: https://ryotamatsuki.github.io/racegame/
 
 ## 主な機能
 
@@ -44,13 +44,15 @@ Viteの`base`はGitHub Pages用に`/racegame/`です。
 
 ## テスト
 
-`npm test` はDOM/WebGLに依存しない走行モデルの受入テストを実行します。`npm run test:e2e` はPlaywrightで3D canvas、ガレージ操作、5カメラ、一時停止、レース完走まで確認します。WebGL 2を利用できないテスト環境では描画テストをBLOCKEDとしてskipし、PASSには置き換えません。
+`npm test` はDOM/WebGLに依存しない走行モデルの受入テストを実行します。`npm run test:e2e` はPlaywrightで3D canvas、4機種、9カテゴリの交換、保存復元、分解/再組立、5カメラ、一時停止、3コースのレース完走をdesktop/mobileで確認します。WebGL 2を利用できないテスト環境では描画テストをBLOCKEDとしてskipし、PASSには置き換えません。
 
 詳細は [ゲーム仕様](docs/GAME_SPEC.md)、[アーキテクチャ](docs/ARCHITECTURE.md)、[実装状況](docs/IMPLEMENTATION_STATUS.md)、[QA報告](docs/QA_REPORT.md) を参照してください。
 
 ## 公開
 
-`main`へのpushでGitHub Pagesワークフローが`dist/`を公開します。PRではCIのみ実行し、デプロイはしません。Pages SourceはGitHub Actionsを使用します。
+ソース・テスト・lockfile・再現可能な配布artifactは、この `ryotamatsuki/racegame` の `main` を正とします。`main`へのpushでは型検査、14件の単体/シミュレーションテスト、production build、desktop/mobile WebGL E2Eを実行します。また `Build deployable site artifact` workflowが検証済みの`dist/`を保存します。
+
+公開先はGitHub Pagesです。連携GitHub Appには新しいPagesサイトを作成するAdministration権限がないため、既にPages有効化済みの `ryotamatsuki/ryotamatsuki.github.io` の `/racegame/` サブディレクトリへproduction buildを同期しています。同リポジトリの `Publish racegame` workflowは `ryotamatsuki/racegame@main` を改めてcheckout・検証・buildし、生成物だけを同期した後、公開URL `https://ryotamatsuki.github.io/racegame/` に対してPlaywrightのdesktop/mobile E2Eを実行します。ユーザーサイトの既存コンテンツは維持します。
 
 ## 素材
 
