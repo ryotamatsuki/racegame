@@ -61,7 +61,7 @@ jobs:
           css_path.write_text(css)
 
           Path('playwright.config.ts').write_text("""import { defineConfig, devices } from '@playwright/test';
-          const publicBase=process.env.PLAYWRIGHT_BASE_URL;
+          const publicBase=(globalThis as typeof globalThis & {process?:{env?:Record<string,string|undefined>}}).process?.env?.PLAYWRIGHT_BASE_URL;
           const localBase='http://127.0.0.1:4173/racegame/';
           export default defineConfig({
             testDir:'./tests/e2e', timeout:150_000, expect:{timeout:10_000}, retries:0, workers:1,
@@ -72,7 +72,7 @@ jobs:
           });
           """)
 
-          Path('bootstrap/ci.yml').write_text("""name: CI
+          Path('bootstrap/ci.yml').write_text(("""name: CI
           on:
             pull_request:
             push:
@@ -113,15 +113,15 @@ jobs:
                   if: always()
                   uses: actions/upload-artifact@v4
                   with:
-                    name: e2e-evidence-${{ github.run_id }}
+                    name: e2e-evidence-__DOLLAR__{{ github.run_id }}
                     path: |
                       test-results/
                       playwright-report/
                     if-no-files-found: warn
                     retention-days: 14
-          """)
+          """).replace('__DOLLAR__',chr(36)))
 
-          Path('bootstrap/pages.yml').write_text("""name: Deploy GitHub Pages
+          Path('bootstrap/pages.yml').write_text(("""name: Deploy GitHub Pages
           on:
             push:
               branches: [main]
@@ -155,10 +155,10 @@ jobs:
               needs: build
               runs-on: ubuntu-latest
               outputs:
-                page_url: ${{ steps.deployment.outputs.page_url }}
+                page_url: __DOLLAR__{{ steps.deployment.outputs.page_url }}
               environment:
                 name: github-pages
-                url: ${{ steps.deployment.outputs.page_url }}
+                url: __DOLLAR__{{ steps.deployment.outputs.page_url }}
               steps:
                 - name: Deploy
                   id: deployment
@@ -177,19 +177,19 @@ jobs:
                 - run: npx playwright install --with-deps chromium
                 - name: Public Pages E2E
                   env:
-                    PLAYWRIGHT_BASE_URL: ${{ needs.deploy.outputs.page_url }}
+                    PLAYWRIGHT_BASE_URL: __DOLLAR__{{ needs.deploy.outputs.page_url }}
                   run: npm run test:e2e
                 - name: Upload public smoke evidence
                   if: always()
                   uses: actions/upload-artifact@v4
                   with:
-                    name: public-pages-e2e-${{ github.run_id }}
+                    name: public-pages-e2e-__DOLLAR__{{ github.run_id }}
                     path: |
                       test-results/
                       playwright-report/
                     if-no-files-found: warn
                     retention-days: 14
-          """)
+          """).replace('__DOLLAR__',chr(36)))
           PY
       - uses: actions/setup-node@v7
         with:
