@@ -227,17 +227,12 @@ jobs:
             playwright-report/
           if-no-files-found: warn
           retention-days: 14
-      - name: Promote verified implementation
+      - name: Promote verified source and lockfile
         shell: bash
         run: |
           set -euo pipefail
-          rm -f .github/workflows/bootstrap-materialize.yml .github/workflows/bootstrap-lock.yml
-          mkdir -p .github/workflows
-          mv bootstrap/ci.yml .github/workflows/ci.yml
-          mv bootstrap/pages.yml .github/workflows/pages.yml
-          rmdir bootstrap
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -A
+          git add -A -- . ':(exclude).github/workflows/**'
           git commit -m 'feat: implement 3D browser racing game'
           git push origin HEAD:implementation/browser-racer-v1
