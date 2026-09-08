@@ -1,6 +1,6 @@
 # ARCHITECTURE
 
-版: 1.0 / 2026-09-08
+版: 1.1 / 2026-09-08
 
 ## 1. 全体構成
 
@@ -38,7 +38,7 @@ Reactは画面遷移、選択、結果等の低頻度状態を担当し、毎フ
 
 ## 4. 固定時間刻み
 
-物理刻みは `1/120 s`。レンダリング側はフレーム時間をaccumulatorへ加え、120 Hzの固定ステップを必要回数だけ進めます。1フレーム最大10ステップに制限し、250 msを超える大幅な遅延は時間飛びを防ぐため破棄します。
+物理刻みは `1/120 s`。レンダリング側はフレーム時間をaccumulatorへ加え、120 Hzの固定ステップを必要回数だけ進めます。ブラウザやソフトウェアWebGL環境で描画が大きく遅延してもレース時計が停止しないよう、1フレームの経過時間は最大250 msへクランプし、1描画あたり最大30固定ステップまでcatch-upします。上限到達時もaccumulatorを完全破棄せず最大2刻み分を残すため、極端な負荷時のspiral of deathを防ぎつつ進行を継続します。
 
 描画FPSを30/60/120相当に変えても、固定ステップの結果が1刻み以内になることを単体テストします。
 
@@ -111,6 +111,10 @@ localStorage key: `racegame-save-v1`。schema versionは1です。
 
 復元時に機種ID、全9カテゴリの部品IDとカテゴリ一致を検査します。不明ID、JSON破損、アクセス拒否は既定値へフォールバックし、ゲーム自体は継続します。
 
-## 11. GitHub Pages
+## 11. GitHub Pages / 公開経路
 
-Vite `base='/racegame/'`。SSR・API・秘密鍵なしの静的配信です。`main`のPages workflowだけがデプロイし、PR workflowは型検査・単体テスト・ビルド・E2Eを行うだけで公開しません。
+Vite `base='/racegame/'`。SSR・API・秘密鍵なしの静的配信です。ソース・テスト・再現可能な配布artifactは `ryotamatsuki/racegame` の `main` を正とします。
+
+`racegame` リポジトリ自体では、連携GitHub Appに新規Pagesサイトを作成するAdministration権限がないため、Pages有効化済みのユーザーサイト `ryotamatsuki/ryotamatsuki.github.io` を公開基盤として使用します。同リポジトリの `Publish racegame` workflowが `ryotamatsuki/racegame@main` をcheckoutし、型検査・単体/シミュレーションテスト・production buildを再実行した上で、生成した`dist`だけを `/racegame/` へ同期します。既存ユーザーサイトの他ファイルは変更しません。
+
+公開URLは `https://ryotamatsuki.github.io/racegame/`。同期後は同URLの反映を待ち、Playwright Chromiumのdesktop/mobile E2Eを公開サイトに対して実行します。
