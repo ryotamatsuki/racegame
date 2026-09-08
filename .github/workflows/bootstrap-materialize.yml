@@ -22,6 +22,35 @@ jobs:
           echo "cce9d1ddd97f74f125191981c5b65c66d52df1ce9717684fda6afce4b289917c  /tmp/racegame-current.tgz" | sha256sum -c -
           tar xzf /tmp/racegame-current.tgz -C .
           rm -f bootstrap/payload-current.part.* bootstrap/source.part.*
+      - name: Apply browser lifecycle and mobile layout fixes
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          app_path=Path('src/ui/App.tsx')
+          app=app_path.read_text()
+          old="""function RaceCanvas({courseId,mode,machineId,setup,seed,quality,reducedMotion,audio,onHud,onDone,onPaused,onLost,controlRef}:{courseId:CourseId;mode:GameMode;machineId:MachineId;setup:Setup;seed:number;quality:Quality;reducedMotion:boolean;audio:AudioManager;onHud:(h:HudInfo)=>void;onDone:(r:RaceResult,p:{samples:number;medianMs:number;p95Ms:number})=>void;onPaused:()=>void;onLost:()=>void;controlRef:MutableRefObject<RaceScene|null>}){
+            const host=useRef<HTMLDivElement>(null);
+            useEffect(()=>{if(!host.current)return;const engine=new RaceEngine({courseId,mode,playerMachineId:machineId,playerSetup:setup,seed});let scene:RaceScene;scene=new RaceScene(host.current,engine,audio,quality,reducedMotion,onHud,(r)=>onDone(r,scene.getPerformance()),onPaused,onLost);controlRef.current=scene;return()=>{scene.dispose();controlRef.current=null;};},[courseId,mode,machineId,setup,seed,quality,reducedMotion,audio,onHud,onDone,onPaused,onLost,controlRef]);
+            return <div className=\"viewport race-viewport\" ref={host} data-testid=\"race-3d\"/>;
+          }"""
+          new="""function RaceCanvas({courseId,mode,machineId,setup,seed,quality,reducedMotion,audio,onHud,onDone,onPaused,onLost,controlRef}:{courseId:CourseId;mode:GameMode;machineId:MachineId;setup:Setup;seed:number;quality:Quality;reducedMotion:boolean;audio:AudioManager;onHud:(h:HudInfo)=>void;onDone:(r:RaceResult,p:{samples:number;medianMs:number;p95Ms:number})=>void;onPaused:()=>void;onLost:()=>void;controlRef:MutableRefObject<RaceScene|null>}){
+            const host=useRef<HTMLDivElement>(null);
+            const callbacks=useRef({onHud,onDone,onPaused,onLost});
+            callbacks.current={onHud,onDone,onPaused,onLost};
+            useEffect(()=>{if(!host.current)return;const engine=new RaceEngine({courseId,mode,playerMachineId:machineId,playerSetup:setup,seed});let scene:RaceScene;scene=new RaceScene(host.current,engine,audio,quality,reducedMotion,(h)=>callbacks.current.onHud(h),(r)=>callbacks.current.onDone(r,scene.getPerformance()),()=>callbacks.current.onPaused(),()=>callbacks.current.onLost());controlRef.current=scene;return()=>{scene.dispose();controlRef.current=null;};},[courseId,mode,machineId,setup,seed,quality,reducedMotion,audio,controlRef]);
+            return <div className=\"viewport race-viewport\" ref={host} data-testid=\"race-3d\"/>;
+          }"""
+          if old not in app:
+              raise SystemExit('RaceCanvas source anchor not found')
+          app_path.write_text(app.replace(old,new))
+          css_path=Path('src/styles.css')
+          css=css_path.read_text()
+          old_media='@media(max-width:900px)'
+          if old_media not in css:
+              raise SystemExit('mobile media query anchor not found')
+          css_path.write_text(css.replace(old_media,'@media(max-width:1024px)',1))
+          PY
       - uses: actions/setup-node@v7
         with:
           node-version: '22'
