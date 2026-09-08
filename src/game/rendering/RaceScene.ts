@@ -1,0 +1,45 @@
+import * as THREE from 'three';
+import type { CameraMode, Quality, RaceResult, VehicleRaceState } from '../../types';
+import { buildLaneTrack, sampleTrack } from '../../data/courses';
+import { getMachine } from '../../data/machines';
+import { createCarVisual, type CarVisual } from './CarFactory';
+import { createCourseVisual } from './CourseFactory';
+import { RaceEngine } from '../simulation/race';
+import { FIXED_DT } from '../simulation/physics';
+import type { AudioManager } from '../audio/AudioManager';
+
+export interface HudInfo { elapsed:number; countdown:number; lap:number; speedKmh:number; rpm:number; position:number; section:string; status:string; }
+
+export class RaceScene {
+  private renderer:THREE.WebGLRenderer;private scene=new THREE.Scene();private camera=new THREE.PerspectiveCamera(55,1,0.02,160);private cars=new Map<string,CarVisual>();private course:ReturnType<typeof createCourseVisual>;
+  private raf=0;private last=performance.now();private accumulator=0;private resizeObserver:ResizeObserver;private cameraMode:CameraMode='chase';private lastHud=0;private finishedSent=false;private frameTimes:number[]=[];private contextLostHandler:(e:Event)=>void;private visibilityHandler:()=>void;private lastEventCount=0;
+  private keyHandler:(e:KeyboardEvent)=>void;
+  constructor(private container:HTMLElement,private engine:RaceEngine,private audio:AudioManager,quality:Quality,private reducedMotion:boolean,private onHud:(h:HudInfo)=>void,private onFinish:(r:RaceResult)=>void,private onPauseRequested:()=>void,private onContextLost:()=>void){
+    this.renderer=new THREE.WebGLRenderer({antialias:quality!=='low',powerPreference:'high-performance'});this.renderer.setPixelRatio(Math.min(devicePixelRatio,quality==='high'?1.7:quality==='medium'?1.35:1));this.renderer.shadowMap.enabled=quality!=='low';this.renderer.outputColorSpace=THREE.SRGBColorSpace;this.renderer.toneMapping=THREE.ACESFilmicToneMapping;this.renderer.toneMappingExposure=0.95;this.renderer.domElement.className='three-canvas';container.appendChild(this.renderer.domElement);
+    this.scene.background=new THREE.Color(0x0f171b);this.scene.fog=new THREE.Fog(0x0f171b,28,70);this.course=createCourseVisual(engine.config.courseId);this.scene.add(this.course.root);this.buildLights(quality);this.buildCars();
+    this.resizeObserver=new ResizeObserver(()=>this.resize());this.resizeObserver.observe(container);this.resize();
+    this.contextLostHandler=(e)=>{e.preventDefault();this.engine.pause();this.onContextLost();};this.renderer.domElement.addEventListener('webglcontextlost',this.contextLostHandler);
+    this.visibilityHandler=()=>{if(document.hidden&&this.engine.snapshot.state==='running'){this.engine.pause();this.audio.pause();this.onPauseRequested();}};document.addEventListener('visibilitychange',this.visibilityHandler);
+    this.keyHandler=(e)=>{if(['1','2','3','4','5'].includes(e.key)){this.setCamera(['chase','onboard','trackside','overview','auto'][Number(e.key)-1] as CameraMode);e.preventDefault();}else if(e.code==='Space'){this.togglePause();e.preventDefault();}};window.addEventListener('keydown',this.keyHandler);
+    this.loop();
+  }
+  private buildLights(q:Quality){const hemi=new THREE.HemisphereLight(0xb8d8e5,0x2c3030,1.5);this.scene.add(hemi);const sun=new THREE.DirectionalLight(0xfff2dc,q==='low'?2.0:2.8);sun.position.set(10,18,8);sun.castShadow=q!=='low';sun.shadow.mapSize.set(q==='high'?2048:1024,q==='high'?2048:1024);sun.shadow.camera.left=-22;sun.shadow.camera.right=22;sun.shadow.camera.top=22;sun.shadow.camera.bottom=-22;this.scene.add(sun);const accent=new THREE.PointLight(0x4ba7ff,35,28);accent.position.set(-10,6,-8);this.scene.add(accent);}
+  private buildCars(){for(const v of this.engine.snapshot.vehicles){const vis=createCarVisual(getMachine(v.machineId),v.setup,true);vis.root.scale.multiplyScalar(2.25);this.cars.set(v.id,vis);this.scene.add(vis.root);}}
+  setCamera(mode:CameraMode){this.cameraMode=mode;}
+  togglePause(){if(this.engine.snapshot.state==='running'){this.engine.pause();this.audio.pause();this.onPauseRequested();}else if(this.engine.snapshot.state==='paused'){this.engine.resume();void this.audio.resume();}}
+  resume(){this.engine.resume();void this.audio.resume();this.last=performance.now();}
+  private loop=()=>{this.raf=requestAnimationFrame(this.loop);const now=performance.now();let frame=(now-this.last)/1000;this.last=now;if(!Number.isFinite(frame)||frame<0)frame=0;frame=Math.min(frame,0.25);this.frameTimes.push(frame*1000);if(this.frameTimes.length>7200)this.frameTimes.shift();
+    if(this.engine.snapshot.state!=='paused'&&this.engine.snapshot.state!=='finished'){this.accumulator+=frame;let steps=0;while(this.accumulator>=FIXED_DT&&steps<30){this.engine.step(FIXED_DT);this.accumulator-=FIXED_DT;steps++;}if(steps===30)this.accumulator=Math.min(this.accumulator,FIXED_DT*2);}
+    this.processEvents();this.updateCars();this.updateCamera();this.updateHud(now);this.renderer.render(this.scene,this.camera);if(this.engine.result&&!this.finishedSent){this.finishedSent=true;this.audio.effect('finish');this.onFinish(this.engine.result);}
+  };
+  private processEvents(){const events=this.engine.snapshot.events;for(let i=this.lastEventCount;i<events.length;i++){const e=events[i]!;if(e.vehicleId==='player'&&e.type==='landing-loss')this.audio.effect('landing');}this.lastEventCount=events.length;}
+  private updateCars(){for(const state of this.engine.snapshot.vehicles){const vis=this.cars.get(state.id);if(!vis)continue;const track=this.engine.tracks[state.lane]??buildLaneTrack(this.engine.config.courseId,state.lane);const p=sampleTrack(track,state.s);const pos=new THREE.Vector3(p.position.x,p.position.y,p.position.z).addScaledVector(new THREE.Vector3(p.normal.x,p.normal.y,p.normal.z),0.105);pos.y+=state.airY;vis.root.position.copy(pos);const side=new THREE.Vector3(p.side.x,p.side.y,p.side.z),normal=new THREE.Vector3(p.normal.x,p.normal.y,p.normal.z),tangent=new THREE.Vector3(p.tangent.x,p.tangent.y,p.tangent.z);const mat=new THREE.Matrix4().makeBasis(side,normal,tangent);vis.root.quaternion.setFromRotationMatrix(mat);vis.spinWheels(-state.s/(0.014*2.25));vis.root.visible=state.status!=='dnf';if(state.id==='player')this.audio.updateMotor(state.rpm);}}
+  private updateCamera(){const player=this.engine.snapshot.vehicles[0];if(!player)return;const track=this.engine.tracks[player.lane]??buildLaneTrack(this.engine.config.courseId,player.lane),p=sampleTrack(track,player.s);const pos=new THREE.Vector3(p.position.x,p.position.y,p.position.z),tan=new THREE.Vector3(p.tangent.x,p.tangent.y,p.tangent.z),normal=new THREE.Vector3(p.normal.x,p.normal.y,p.normal.z),side=new THREE.Vector3(p.side.x,p.side.y,p.side.z);let mode=this.cameraMode;if(mode==='auto'){if(this.reducedMotion)mode='chase';else{const k=Math.floor(this.engine.snapshot.elapsed/6)%4;mode=(['chase','trackside','onboard','overview'] as CameraMode[])[k]!;}}
+    let target=pos.clone().addScaledVector(normal,0.12),cam=new THREE.Vector3();if(mode==='chase'){cam=target.clone().addScaledVector(tan,-2.0).addScaledVector(normal,0.85).addScaledVector(side,0.35);}else if(mode==='onboard'){cam=target.clone().addScaledVector(normal,0.16).addScaledVector(tan,0.06);target=target.clone().addScaledVector(tan,3);}else if(mode==='trackside'){const q=sampleTrack(track,player.s+4.5);cam=new THREE.Vector3(q.position.x,q.position.y,q.position.z).addScaledVector(new THREE.Vector3(q.side.x,q.side.y,q.side.z),3.0).addScaledVector(new THREE.Vector3(q.normal.x,q.normal.y,q.normal.z),1.5);}else{cam.set(0,24,18);target.set(0,1,0);}
+    this.camera.position.lerp(cam,mode==='onboard'?0.28:0.10);this.camera.up.lerp(normal,0.08).normalize();this.camera.lookAt(target);
+  }
+  private updateHud(now:number){if(now-this.lastHud<100)return;this.lastHud=now;const p=this.engine.snapshot.vehicles[0];if(!p)return;const track=this.engine.tracks[p.lane]??buildLaneTrack(this.engine.config.courseId,p.lane),point=sampleTrack(track,p.s);this.onHud({elapsed:this.engine.snapshot.elapsed,countdown:this.engine.snapshot.countdown,lap:Math.min(3,p.lap+1),speedKmh:p.speed*3.6,rpm:p.rpm,position:this.engine.getPosition(p.id),section:point.section,status:p.status});}
+  getPerformance(){const data=this.frameTimes.filter((x)=>x>0&&x<250).sort((a,b)=>a-b);const pick=(q:number)=>data[Math.min(data.length-1,Math.max(0,Math.floor(data.length*q)))]??0;return {samples:data.length,medianMs:pick(0.5),p95Ms:pick(0.95)};}
+  private resize(){const w=Math.max(1,this.container.clientWidth),h=Math.max(1,this.container.clientHeight);this.renderer.setSize(w,h,false);this.camera.aspect=w/h;this.camera.updateProjectionMatrix();}
+  dispose(){cancelAnimationFrame(this.raf);this.resizeObserver.disconnect();window.removeEventListener('keydown',this.keyHandler);document.removeEventListener('visibilitychange',this.visibilityHandler);this.renderer.domElement.removeEventListener('webglcontextlost',this.contextLostHandler);for(const c of this.cars.values())c.dispose();this.course.dispose();this.renderer.dispose();this.renderer.domElement.remove();}
+}
